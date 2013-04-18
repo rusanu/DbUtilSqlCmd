@@ -33,15 +33,16 @@ namespace com.rusanu.DBUtil {
 	public class SqlCmd : IDisposable {
 		private readonly Environment _environment;
 		private SqlConnection _privateConnection;
-		private string currentDirectory;
+		private string _currentDirectory;
 
 		/// <summary>
 		/// Constructor
 		/// </summary>
 		/// <param name="conn">The SQL Connection used to execute the SQL batches</param>
 		public SqlCmd (SqlConnection conn) {
-			_environment = new Environment ();
-			_environment.Connection = conn;
+			_environment = new Environment {
+				Connection = conn
+			};
 			BatchDelimiter = "GO";
 		}
 
@@ -83,7 +84,7 @@ namespace com.rusanu.DBUtil {
 		/// Executes a SQL file on the given connection
 		/// </summary>
 		/// <param name="conn">Connection to execute the file on</param>
-		/// <param name="file">The SQL file being executed</param>
+		/// <param name="filePath">The SQL file being executed</param>
 		public static void ExecuteFile (
 			SqlConnection conn,
 			string filePath) {
@@ -94,7 +95,7 @@ namespace com.rusanu.DBUtil {
 		/// <summary>
 		/// Executes a SQL file
 		/// </summary>
-		/// <param name="file">The SQL file to execute</param>
+		/// <param name="filePath">The SQL file to execute</param>
 		public bool ExecuteFile (
 			string filePath) {
 			var regDelimiter = new Regex (@"^\b*" + BatchDelimiter + @"\b*(\d*)", RegexOptions.IgnoreCase);
@@ -103,15 +104,15 @@ namespace com.rusanu.DBUtil {
 			var currentBatch = new StringBuilder ();
 			var filesQueue = new Queue<TextReader> ();
 
-			if (string.IsNullOrEmpty (currentDirectory)) {
-				currentDirectory = Path.GetDirectoryName (filePath);
-				System.Environment.CurrentDirectory = currentDirectory;
+			if (string.IsNullOrEmpty (_currentDirectory)) {
+				_currentDirectory = Path.GetDirectoryName (filePath);
+				System.Environment.CurrentDirectory = _currentDirectory;
 			}
 			var file = File.OpenText (filePath) as TextReader;
 
 			filesQueue.Enqueue (file);
 
-			string line = null;
+			string line;
 			do {
 				line = file.ReadLine ();
 
@@ -122,7 +123,7 @@ namespace com.rusanu.DBUtil {
 				}
 
 				if (null == line || delimiterMatches.Count > 0) {
-					uint count = 1;
+					const uint count = 1;
 					if (null != delimiterMatches) {
 						if (2 == delimiterMatches [0].Groups.Count) {
 							//count = Convert.ToUInt32(delimiterMatches[0].Groups[1].Value);
@@ -135,9 +136,6 @@ namespace com.rusanu.DBUtil {
 						return false;
 					}
 					currentBatch = new StringBuilder ();
-					if (null == file) {
-						file = filesQueue.Dequeue ();
-					}
 					continue;
 				}
 
@@ -203,7 +201,7 @@ namespace com.rusanu.DBUtil {
 		}
 
 		private void RunCommand (string line) {
-			Regex regFile = new Regex (@":r\s+(?<file>.+)", RegexOptions.IgnoreCase);
+			var regFile = new Regex (@":r\s+(?<file>.+)", RegexOptions.IgnoreCase);
 			var match = regFile.Match (line);
 			if (!match.Success) {
 				return;
@@ -224,7 +222,7 @@ namespace com.rusanu.DBUtil {
 		private void ConnectCommand (string line) {
 			// server_name[\instance_name] [-l timeout] [-U user_name [-P password]] 
 			var regConnect = new Regex (@"^:connect\s+(?<server>[^\s]+)(?:\s+-l\s+(?<timeout>[\d]+))?(?:\s+-U\s+(?<user>[^\s]+))?(?:\s+-P\s+(?<password>[^\s]+))?", RegexOptions.IgnoreCase);
-			MatchCollection connectMatches = regConnect.Matches (line);
+			var connectMatches = regConnect.Matches (line);
 
 			if (connectMatches.Count != 1) {
 				throw new SqlCmdConnectSyntaxException (line);
@@ -282,7 +280,9 @@ namespace com.rusanu.DBUtil {
 
 			Group valueGroup = m.Groups ["value"];
 			if (valueGroup.Success) {
-				Environment.Variables [variableGroup.Value] = valueGroup.Value;
+				if (!Environment.Variables.ContainsKey (variableGroup.Value)) {
+					Environment.Variables [variableGroup.Value] = valueGroup.Value;
+				}
 			} else {
 				Environment.Variables.Remove (variableGroup.Value);
 			}
@@ -315,8 +315,9 @@ namespace com.rusanu.DBUtil {
 						Environment, batch);
 					Executing (this, args);
 				}
-				var cmd = new SqlCommand (batch, Environment.Connection);
-				cmd.CommandTimeout = 0;
+				var cmd = new SqlCommand (batch, Environment.Connection) {
+					CommandTimeout = 0
+				};
 				try {
 					LastBatch = batch;
 					cmd.ExecuteNonQuery ();
