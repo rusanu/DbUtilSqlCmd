@@ -313,7 +313,7 @@ namespace com.rusanu.DBUtil {
 		}
 
 
-		private void OnErrorCommand (string line) { }
+		private void OnErrorCommand (string line) { throw new Exception(line); }
 
 		private void SetVarCommand (string line) {
 			var regSetVar = new Regex (@"^:setvar\s+(?<name>[\w_-]+)(?:\s+(?<value>[^\s]+))?", RegexOptions.IgnoreCase);
