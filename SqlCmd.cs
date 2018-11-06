@@ -242,20 +242,14 @@ namespace com.rusanu.DBUtil {
 		private void RunCommand (string line, string basePath) {
 			Regex regFile = new Regex (@":r\s+(?<file>.+)", RegexOptions.IgnoreCase);
 			var match = regFile.Match (line);
-			if (!match.Success) {
-				return;
-			}
-			var fileMatch = match.Groups ["file"];
-			if (fileMatch == null) {
-				return;
+			string fileMatch = null;
+			if (match.Success) {
+				fileMatch = match.Groups ["file"].Value;
 			}
 
-			var filePath = GetFullFilePath(fileMatch.Value, basePath);
-			if (string.IsNullOrEmpty (filePath) || !File.Exists (filePath)) {
-				return;
-			}
+			var filePath = GetFullFilePath(fileMatch, basePath);
 
-			ExecuteFile (filePath);
+			ExecuteFile (filePath, basePath);
 		}
 
 		private string GetFullFilePath(string filePath, string basePath)
