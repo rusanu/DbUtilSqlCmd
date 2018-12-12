@@ -242,20 +242,14 @@ namespace com.rusanu.DBUtil {
 		private void RunCommand (string line, string basePath) {
 			Regex regFile = new Regex (@":r\s+(?<file>.+)", RegexOptions.IgnoreCase);
 			var match = regFile.Match (line);
-			if (!match.Success) {
-				return;
-			}
-			var fileMatch = match.Groups ["file"];
-			if (fileMatch == null) {
-				return;
+			string fileMatch = null;
+			if (match.Success) {
+				fileMatch = match.Groups ["file"].Value;
 			}
 
-			var filePath = GetFullFilePath(fileMatch.Value, basePath);
-			if (string.IsNullOrEmpty (filePath) || !File.Exists (filePath)) {
-				return;
-			}
+			var filePath = GetFullFilePath(fileMatch, basePath);
 
-			ExecuteFile (filePath);
+			ExecuteFile (filePath, basePath);
 		}
 
 		private string GetFullFilePath(string filePath, string basePath)
@@ -315,8 +309,17 @@ namespace com.rusanu.DBUtil {
 
 		private void OnErrorCommand (string line) { }
 
+		/// <summary>
+		/// Valid setvars start the line with :setvar, have a variable name, and have a string value.
+		/// If the string value is unquoted, it cannot have spaces or double quotes.
+		/// If the string is quoted, it can contain spaces, double quotes are escaped by double-double quotes.
+		/// after the value are ignored. Unquoted values need a space before the comment, but quoted values do not.
+		/// </summary>
+		/// <example></example>
+		/// <param name="line"></param>
 		private void SetVarCommand (string line) {
-			var regSetVar = new Regex (@"^:setvar\s+(?<name>[\w_-]+)(?:\s+(?<value>[^\s]+))?", RegexOptions.IgnoreCase);
+			// https://github.com/rusanu/com.rusanu.dbutil/issues/6
+			var regSetVar = new Regex(@"^:setvar\s+(?<name>[\w_-]+)(?:\s+(?<value>.*))?", RegexOptions.IgnoreCase);
 			MatchCollection matchSetVar = regSetVar.Matches (line);
 			if (1 != matchSetVar.Count) {
 				throw new SqlCmdSetVarSyntaxException (line);
@@ -330,25 +333,78 @@ namespace com.rusanu.DBUtil {
 			Group valueGroup = m.Groups ["value"];
 			if (valueGroup.Success) {
 
-		                // Strip double quotations from beginning 
-		                string value = valueGroup.Value;
-		                if (value.StartsWith("\""))
-		                {
-		                    value = value.Substring(1);
-		                }
-		
-		                // Strip double quotations from end
-		                if (value.EndsWith("\""))
-		                {
-		                    value = value.Substring(0, value.Length - 1);
-		                }
-		
-				Environment.Variables [variableGroup.Value] = value;
+				string value = valueGroup.Value;
+				string outputValue = "";
+
+				// Strip double quotations from beginning
+				// there can be any number of double-double quotes,
+				// we want to find the first non-double quote,
+				// and remove everything after that, including comments
+
+				//:setvar stringWithQuotes """string ""with"" """"quotes"""--test "comment"
+				//print '$(stringWithQuotes)'
+				//
+				//"string "with" ""quotes"
+				if (value.StartsWith("\""))
+				{
+					value = value.Substring(1);
+
+					string[] values = Regex.Split(value, "\"\"");
+					for(int i=0; i< values.Length; i++)
+					{
+						//the string was split on "\"\""
+						//replace it with a single "\"" on all teh middle sections.
+						if (i != 0 )
+						{
+							outputValue += "\"";
+						}
+						int index = values[i].IndexOf('\"');
+						if ( index != -1)
+						{
+							//We found the first single-doublequote, dump the rest and finish.
+							outputValue += values[i].Substring(0, index);
+							break;
+						}
+						else
+						{
+							outputValue += values[i];
+						}
+					}
+				}
+				else
+				{
+					// Strip everything after the first word.
+					// if ther is no space before a -- then -- is included in the first word.
+
+					// :setvar basicUnquoted unquoted--text -- test comment
+					// print '$(basicUnquoted)'
+					//
+					// unquoted--text
+
+					// :setvar basicUnquoted unquoted--text  test comment
+					// print '$(basicUnquoted)'
+					//
+					// Incorrect syntax was encountered while parsing :setvar.
+					string[] values = value.Split(' ');
+					if (values[0].IndexOf("\"") != -1)
+					{
+						throw new Exception("Invalid setvar: " + line);
+					}
+					if(values.Length > 1)
+					{
+						if (!values[1].StartsWith("--"))
+						{
+							throw new Exception("Invalid Setvar: " + line);
+						}
+					}
+					outputValue = values[0];
+				}
+
+				Environment.Variables [variableGroup.Value] = outputValue;
 			} else {
 				Environment.Variables.Remove (variableGroup.Value);
 			}
 		}
-
 		private void ShellCommand (string line) {
 			var regShell = new Regex (@":!!\s+(?<command>""[^""]+""|[^\s]+)(?:\s+(?<arguments>.+))?", RegexOptions.IgnoreCase);
 			MatchCollection matchShell = regShell.Matches (line);
