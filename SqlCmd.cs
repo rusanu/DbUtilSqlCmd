@@ -82,20 +82,25 @@ namespace com.rusanu.DBUtil {
 		/// Executes a SQL file on the given connection
 		/// </summary>
 		/// <param name="conn">Connection to execute the file on</param>
-		/// <param name="file">The SQL file being executed</param>
+		/// <param name="filePath">The SQL file being executed</param>
 		public static void ExecuteFile (
 			SqlConnection conn,
-			string filePath) {
-			var sqlCmd = new SqlCmd (conn);
-			sqlCmd.ExecuteFile (filePath);
+			string filePath)
+		{
+			using (var sqlCmd = new SqlCmd(conn))
+			{
+				sqlCmd.ExecuteFile(filePath);
+			}
 		}
 
 		public static void ExecuteStream(
 			SqlConnection conn,
 			Stream stream)
 		{
-			var sqlCmd = new SqlCmd(conn);
-			sqlCmd.ExecuteStream(stream);
+			using (var sqlCmd = new SqlCmd(conn))
+			{
+				sqlCmd.ExecuteStream(stream);
+			}
 		}
 
 		/// <summary>
