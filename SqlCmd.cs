@@ -146,16 +146,30 @@ namespace com.rusanu.DBUtil {
 			var currentBatch = new StringBuilder ();
 			var filesQueue = new Queue<TextReader> ();
 
+			bool inComment = false;
+			int lineNumber = 0;
+			int batchNumber = 0;
+			int batchStartLine = 1;
+
 			filesQueue.Enqueue (file);
 
 			string line = null;
 			do {
 				line = file.ReadLine ();
+				lineNumber++;
 
 				MatchCollection delimiterMatches = null;
 
-				if (null != line) {
-					delimiterMatches = regDelimiter.Matches (line);
+				if (null != line)
+				{
+					line = StripComments(line, ref inComment);
+
+					if (inComment && line.Trim().Length == 0)
+					{
+						continue;
+					}
+
+					delimiterMatches = regDelimiter.Matches(line);
 				}
 
 				if (null == line || delimiterMatches.Count > 0) {
@@ -166,11 +180,31 @@ namespace com.rusanu.DBUtil {
 						}
 					}
 
+					batchNumber++;
 					string batch = currentBatch.ToString ();
-					if (false == ExecuteBatch (batch, count) &&
-						 false == ContinueOnError) {
-						return false;
+					try
+					{
+						// Only execute batches if they actually contain commands.
+						// Some batches might be handled entirely by :command and/or comment stripping logic
+						if (batch.Trim().Length > 0)
+						{
+							if (false == ExecuteBatch(batch, count) &&
+								false == ContinueOnError)
+							{
+								return false;
+							}
+						}
 					}
+					catch (SqlException e)
+					{
+						throw new Exception(string.Format(
+							"Error executing batch {0} from lines {1} to {2}",
+							batchNumber,
+							batchStartLine,
+							lineNumber));
+					}
+
+					batchStartLine = lineNumber + 1;
 					currentBatch = new StringBuilder ();
 					if (null == file) {
 						file = filesQueue.Dequeue ();
@@ -237,6 +271,46 @@ namespace com.rusanu.DBUtil {
 				}
 			} while (null != line && filesQueue.Count > 0);
 			return true;
+		}
+
+		private static string StripComments(string line, ref bool inComment)
+		{
+			string resultLine = line;
+			int startCommentPos;
+			int endCommentPos;
+			do
+			{
+				startCommentPos = resultLine.IndexOf("/*", StringComparison.Ordinal);
+				endCommentPos = resultLine.IndexOf("*/", StringComparison.Ordinal);
+
+				if (startCommentPos > -1)
+				{
+					if (endCommentPos > -1)
+					{
+						resultLine = resultLine.Remove(startCommentPos, endCommentPos - startCommentPos + "*/".Length);
+					}
+					else
+					{
+						resultLine = resultLine.Remove(startCommentPos);
+						inComment = true;
+					}
+				}
+				else if (inComment)
+				{
+					if (endCommentPos > -1)
+					{
+						resultLine = resultLine.Remove(0, endCommentPos + "*/".Length);
+						inComment = false;
+					}
+					else
+					{
+						resultLine = string.Empty;
+					}
+				}
+			}
+			while (startCommentPos > -1 && endCommentPos > -1);
+
+			return resultLine;
 		}
 
 		private void RunCommand (string line, string basePath) {
